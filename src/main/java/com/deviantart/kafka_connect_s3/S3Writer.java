@@ -1,5 +1,22 @@
 package com.deviantart.kafka_connect_s3;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+import org.apache.kafka.common.TopicPartition;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
@@ -7,35 +24,8 @@ import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
-
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.connect.errors.ConnectException;
-import org.apache.kafka.connect.errors.RetriableException;
-
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
-
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileReader;
-import java.io.InputStreamReader;
-import java.io.IOException;
-import java.io.Reader;
-import java.lang.StringBuilder;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
 
 
 /**
@@ -69,12 +59,10 @@ public class S3Writer {
     this.tm = tm;
   }
 
-  public long putChunk(String localDataFile, String localIndexFile, TopicPartition tp) throws IOException {
+  public void uploadChunk(String localDataFile, String localIndexFile, TopicPartition tp) throws IOException {
     // Put data file then index, then finally update/create the last_index_file marker
     String dataFileKey = this.getChunkFileKey(localDataFile);
     String idxFileKey = this.getChunkFileKey(localIndexFile);
-    // Read offset first since we'll delete the file after upload
-    long nextOffset = getNextOffsetFromIndexFileContents(new FileReader(localIndexFile));
 
     try {
       Upload upload = tm.upload(this.bucket, dataFileKey, new File(localDataFile));
@@ -86,6 +74,13 @@ public class S3Writer {
     }
 
     this.updateCursorFile(idxFileKey, tp);
+  }
+
+  public long putChunk(String localDataFile, String localIndexFile, TopicPartition tp) throws IOException {
+    // Read offset first since we'll delete the file after upload
+    long nextOffset = getNextOffsetFromIndexFileContents(new FileReader(localIndexFile));
+
+    uploadChunk(localDataFile, localIndexFile, tp);
 
     // Sanity check - return what the new nextOffset will be based on the index we just uploaded
     return nextOffset;
